@@ -1,0 +1,6 @@
+django==4.2
+psycopg2-binary
+moviepy
+minio
+boto3
+django-environ

@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">{% if video %}Sửa{% else %}Khởi tạo{% endif %} Video Profile</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">UUID</label>
+                            <input type="text" class="form-control" value="{{ video.id|default:'Tự động khởi tạo' }}" disabled>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Assigned User</label>
+                            <input type="text" name="assigned_user" class="form-control" value="{{ video.assigned_user }}" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Link YouTube</label>
+                        <div class="input-group">
+                            <input type="url" id="yt_link" name="youtube_link" class="form-control" value="{{ video.youtube_link }}">
+                            <button class="btn btn-outline-secondary" type="button" onclick="previewYoutube()">Preview YT</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Link Minio MP4 (Đầu vào)</label>
+                        <div class="input-group">
+                            <input type="text" id="minio_in" name="minio_input_path" class="form-control" value="{{ video.minio_input_path }}">
+                            <button class="btn btn-outline-secondary" type="button" onclick="previewMinio('minio_in', 'player_in')">Preview Input</button>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <h6>Danh sách Objects (Prompts & Results)</h6>
+                    <div id="object-list">
+                        {% for item in video.processing_details %}
+                        <div class="border p-2 mb-2 rounded bg-light">
+                            <p><strong>Prompt:</strong> {{ item.prompt }}</p>
+                            <p><strong>Kết quả:</strong> {{ item.result }}</p>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="out_{{ forloop.counter }}" class="form-control" value="{{ item.output_path }}" readonly>
+                                <button class="btn btn-success" type="button" onclick="previewMinio('out_{{ forloop.counter }}', 'player_out')">Preview Output</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">Lưu Profile</button>
+                        <a href="{% url 'video_list' %}" class="btn btn-secondary">Hủy</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="sticky-top" style="top: 20px;">
+            <div class="card mb-3 shadow-sm">
+                <div class="card-header bg-dark text-white p-2 text-center small">YouTube Preview</div>
+                <div class="preview-container" id="yt_container">
+                    <div class="text-muted">Chưa có link YouTube</div>
+                </div>
+            </div>
+
+            <div class="card mb-3 shadow-sm">
+                <div class="card-header bg-dark text-white p-2 text-center small">Minio Input Preview</div>
+                <div class="preview-container">
+                    <video id="player_in" controls></video>
+                </div>
+            </div>
+
+            <div class="card mb-3 shadow-sm">
+                <div class="card-header bg-dark text-white p-2 text-center small">Minio Output Preview</div>
+                <div class="preview-container">
+                    <video id="player_out" controls></video>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function previewYoutube() {
+        const url = document.getElementById('yt_link').value;
+        const container = document.getElementById('yt_container');
+        if (url.includes('v=')) {
+            const videoId = url.split('v=')[1].split('&')[0];
+            container.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>`;
+        } else {
+            alert('Link YouTube không hợp lệ!');
+        }
+    }
+
+    function previewMinio(inputId, videoTagId) {
+        const url = document.getElementById(inputId).value;
+        const videoTag = document.getElementById(videoTagId);
+        if (url) {
+            videoTag.src = url;
+            videoTag.play();
+        } else {
+            alert('Vui lòng nhập link MP4!');
+        }
+    }
+</script>
+{% endblock %}

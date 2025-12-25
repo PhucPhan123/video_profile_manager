@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Profile Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .preview-container { background: #000; border-radius: 8px; overflow: hidden; height: 250px; display: flex; align-items: center; justify-content: center; color: white; }
+        video, iframe { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Video Manager</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{% url 'video_list' %}">Quản lý Video</a>
+                <a class="nav-link" href="{% url 'prompt_list' %}">Quản lý Prompt</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

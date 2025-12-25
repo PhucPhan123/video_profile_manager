@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Database: PostgreSQL
+  db:
+    image: postgres:15
+    container_name: video_profile_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=videoprofile_db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secretpassword
+
+  # Storage: Minio (S3 Compatible)
+  minio:
+    image: minio/minio
+    container_name: video_profile_minio
+    ports:
+      - "9000:9000"    # API Port
+      - "9001:9001"    # Console Port (Giao diện web)
+    volumes:
+      - minio_data:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+
+  # Backend & Frontend: Django
+  web:
+    build: .
+    container_name: video_profile_web
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_NAME=videoprofile_db
+      - DB_USER=admin
+      - DB_PASSWORD=secretpassword
+      - DB_HOST=db
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    depends_on:
+      - db
+      - minio
+
+volumes:
+  postgres_data:
+  minio_data:
