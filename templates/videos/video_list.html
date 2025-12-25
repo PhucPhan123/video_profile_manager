@@ -1,39 +1,181 @@
+<!-- templates/videos/video_list.html -->
 {% extends 'base.html' %}
+
+{% block title %}Quản lý Video - Video Profile Management{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h3>Quản lý Video Profile</h3>
-    <a href="{% url 'video_create' %}" class="btn btn-success">+ Khởi tạo Video</a>
+    <h2><i class="bi bi-collection-play"></i> Quản lý Video</h2>
+    <a href="{% url 'videos:video_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Tạo Video Mới
+    </a>
 </div>
 
-<div class="card shadow-sm">
-    <div class="table-responsive">
-        <table class="table table-hover mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>UUID</th>
-                    <th>User</th>
-                    <th>YouTube</th>
-                    <th>Ngày tạo</th>
-                    <th>Thao tác</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for video in videos %}
-                <tr>
-                    <td class="small">{{ video.id }}</td>
-                    <td>{{ video.assigned_user }}</td>
-                    <td><a href="{{ video.youtube_link }}" target="_blank">Link</a></td>
-                    <td>{{ video.created_at|date:"d/m/Y H:i" }}</td>
-                    <td>
-                        <a href="{% url 'video_edit' video.id %}" class="btn btn-sm btn-info text-white">Sửa/View</a>
-                        <a href="{% url 'video_delete' video.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Xóa profile này?')">Xóa</a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="5" class="text-center">Chưa có video nào.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<!-- Filter and Search -->
+<div class="card">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-5">
+                <input type="text" name="search" class="form-control" 
+                       placeholder="Tìm kiếm theo tiêu đề, URL, ghi chú..." 
+                       value="{{ search_query }}">
+            </div>
+            <div class="col-md-3">
+                <select name="status" class="form-select">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i> Tìm kiếm
+                </button>
+            </div>
+            <div class="col-md-2">
+                <a href="{% url 'videos:video_list' %}" class="btn btn-secondary w-100">
+                    <i class="bi bi-x-circle"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Video List -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> Danh sách Video ({{ page_obj.paginator.count }})
+    </div>
+    <div class="card-body p-0">
+        {% if videos %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 5%;">STT</th>
+                            <th style="width: 25%;">Tiêu đề</th>
+                            <th style="width: 15%;">Người phụ trách</th>
+                            <th style="width: 10%;">Trạng thái</th>
+                            <th style="width: 10%;">Segments</th>
+                            <th style="width: 15%;">Ngày tạo</th>
+                            <th style="width: 20%;" class="text-center">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for video in videos %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <a href="{% url 'videos:video_detail' video.pk %}" class="text-decoration-none">
+                                        {{ video.title|default:"Chưa có tiêu đề"|truncatewords:8 }}
+                                    </a>
+                                    <br>
+                                    <small class="text-muted">
+                                        <i class="bi bi-youtube"></i> 
+                                        {{ video.youtube_video_id|default:"N/A" }}
+                                    </small>
+                                </td>
+                                <td>
+                                    {% if video.assigned_user %}
+                                        <i class="bi bi-person-fill"></i> {{ video.assigned_user.username }}
+                                    {% else %}
+                                        <span class="text-muted">Chưa assign</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if video.status == 'draft' %}
+                                        <span class="badge bg-secondary status-badge">Draft</span>
+                                    {% elif video.status == 'processing' %}
+                                        <span class="badge bg-warning status-badge">Processing</span>
+                                    {% elif video.status == 'completed' %}
+                                        <span class="badge bg-success status-badge">Completed</span>
+                                    {% elif video.status == 'failed' %}
+                                        <span class="badge bg-danger status-badge">Failed</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">
+                                        {{ video.get_processing_count }} segment(s)
+                                    </span>
+                                </td>
+                                <td>
+                                    <small>{{ video.created_at|date:"d/m/Y H:i" }}</small>
+                                </td>
+                                <td class="table-actions text-center">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <a href="{% url 'videos:video_detail' video.pk %}" 
+                                           class="btn btn-info" title="Xem chi tiết">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <a href="{% url 'videos:video_update' video.pk %}" 
+                                           class="btn btn-warning" title="Sửa">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{% url 'videos:video_delete' video.pk %}" 
+                                           class="btn btn-danger" title="Xóa"
+                                           onclick="return confirm('Bạn có chắc muốn xóa video này?')">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if is_paginated %}
+                <div class="card-footer">
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination justify-content-center mb-0">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                                        <i class="bi bi-chevron-double-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </a>
+                                </li>
+                            {% endif %}
+                            
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                                </span>
+                            </li>
+                            
+                            {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                                        <i class="bi bi-chevron-double-right"></i>
+                                    </a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
+                <p class="text-muted mt-3">Chưa có video nào.</p>
+                <a href="{% url 'videos:video_create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> Tạo video đầu tiên
+                </a>
+            </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
