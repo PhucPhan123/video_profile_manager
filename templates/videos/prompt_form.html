@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if prompt %}Sửa{% else %}Tạo{% endif %} Prompt Template{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1>
+            <i class="bi bi-{% if prompt %}pencil-square{% else %}plus-circle{% endif %}"></i>
+            {% if prompt %}Sửa{% else %}Tạo{% endif %} Prompt Template
+        </h1>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Thông tin Prompt Template</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Tên Template <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" name="name" 
+                               value="{{ prompt.name|default:'' }}" required
+                               placeholder="VD: Review Video Template">
+                        <small class="form-text text-muted">
+                            Tên mô tả cho template này
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Thể loại <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" name="category" required>
+                            <option value="">-- Chọn thể loại --</option>
+                            {% for value, label in category_choices %}
+                            <option value="{{ value }}" 
+                                    {% if prompt and prompt.category == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Nội dung Template <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" name="template_content" rows="10" required
+                                  placeholder="VD: Phân tích video {youtube_link} và đưa ra nhận xét về nội dung...">{{ prompt.template_content|default:'' }}</textarea>
+                        <small class="form-text text-muted">
+                            Sử dụng <code>{youtube_link}</code> làm placeholder cho link YouTube. 
+                            Khi generate prompt, placeholder này sẽ được thay thế bằng link thực tế.
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Mô tả</label>
+                        <textarea class="form-control" name="description" rows="3"
+                                  placeholder="Mô tả chi tiết về cách sử dụng template này...">{{ prompt.description|default:'' }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_active" 
+                                   id="is_active" {% if not prompt or prompt.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">
+                                Đang hoạt động
+                            </label>
+                            <small class="form-text text-muted d-block">
+                                Template có đang được sử dụng không
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-save"></i> Lưu
+                    </button>
+                    <a href="{% url 'prompt_list' %}" class="btn btn-secondary btn-lg">
+                        <i class="bi bi-x-circle"></i> Hủy
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightbulb"></i> Hướng dẫn</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Cách sử dụng Template:</h6>
+                    <ol class="small">
+                        <li>Tạo template với nội dung mô tả cách xử lý video</li>
+                        <li>Sử dụng <code>{youtube_link}</code> để đánh dấu vị trí cần thay thế</li>
+                        <li>Khi tạo/sửa video, chọn template và click "Generate"</li>
+                        <li>Hệ thống sẽ tự động tạo prompt từ template</li>
+                    </ol>
+                    
+                    <hr>
+                    
+                    <h6>Ví dụ Template:</h6>
+                    <div class="alert alert-light">
+                        <pre class="mb-0 small">Phân tích video tại {youtube_link} và:
+1. Tóm tắt nội dung chính
+2. Xác định các thời điểm quan trọng
+3. Đề xuất cách cắt video thành clips ngắn</pre>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6>Các thể loại phổ biến:</h6>
+                    <ul class="small">
+                        <li><strong>Review:</strong> Đánh giá sản phẩm/dịch vụ</li>
+                        <li><strong>Shorts:</strong> Video ngắn, viral</li>
+                        <li><strong>Education:</strong> Nội dung giáo dục</li>
+                        <li><strong>Tutorial:</strong> Hướng dẫn cụ thể</li>
+                        <li><strong>Interview:</strong> Phỏng vấn, trò chuyện</li>
+                    </ul>
+                </div>
+            </div>
+            
+            {% if prompt %}
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Thông tin</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2">
+                        <strong>UUID:</strong><br>
+                        <small class="text-muted font-monospace">{{ prompt.id }}</small>
+                    </p>
+                    <p class="mb-2">
+                        <strong>Ngày tạo:</strong><br>
+                        <small>{{ prompt.created_at|date:"d/m/Y H:i:s" }}</small>
+                    </p>
+                    <p class="mb-0">
+                        <strong>Cập nhật lần cuối:</strong><br>
+                        <small>{{ prompt.updated_at|date:"d/m/Y H:i:s" }}</small>
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Preview template content
+    const templateContent = document.querySelector('textarea[name="template_content"]');
+    
+    templateContent.addEventListener('input', function() {
+        // You can add real-time preview here if needed
+    });
+</script>
+{% endblock %}

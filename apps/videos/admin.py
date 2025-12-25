@@ -1,52 +1,73 @@
+"""
+Admin configuration for Video Profile Management
+"""
 from django.contrib import admin
 from .models import VideoProfile, PromptTemplate
 
+
 @admin.register(PromptTemplate)
 class PromptTemplateAdmin(admin.ModelAdmin):
-    # Các cột hiển thị trong danh sách
-    list_display = ('id', 'genre', 'template_short_text')
-    # Cho phép tìm kiếm theo thể loại
-    search_fields = ('genre', 'template_text')
-    # Bộ lọc ở bên phải
-    list_filter = ('genre',)
-
-    def template_short_text(self, obj):
-        """Hiển thị bản tóm tắt nội dung template"""
-        return obj.template_text[:50] + "..." if len(obj.template_text) > 50 else obj.template_text
-    template_short_text.short_description = 'Nội dung Template'
+    """Admin cho PromptTemplate"""
+    
+    list_display = ['name', 'category', 'is_active', 'created_at', 'updated_at']
+    list_filter = ['category', 'is_active', 'created_at']
+    search_fields = ['name', 'description', 'template_content']
+    readonly_fields = ['id', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Thông tin cơ bản', {
+            'fields': ('id', 'name', 'category', 'is_active')
+        }),
+        ('Nội dung Template', {
+            'fields': ('template_content', 'description')
+        }),
+        ('Thông tin hệ thống', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(VideoProfile)
 class VideoProfileAdmin(admin.ModelAdmin):
-    # Các cột hiển thị trong danh sách video
-    list_display = ('id', 'assigned_user', 'youtube_link', 'created_at')
-    # Cho phép click vào UUID hoặc User để vào trang sửa
-    list_display_links = ('id', 'assigned_user')
-    # Bộ lọc theo thời gian và người dùng
-    list_filter = ('created_at', 'assigned_user')
-    # Tìm kiếm theo UUID hoặc Link
-    search_fields = ('id', 'youtube_link', 'assigned_user')
-    # Sắp xếp theo ngày mới nhất lên đầu
-    ordering = ('-created_at',)
+    """Admin cho VideoProfile"""
     
-    # Cấu hình để hiển thị JSONField đẹp hơn (chế độ readonly)
-    readonly_fields = ('id', 'created_at', 'updated_at')
+    list_display = ['title', 'status', 'assigned_user', 'get_progress', 'created_at', 'updated_at']
+    list_filter = ['status', 'assigned_user', 'created_at']
+    search_fields = ['title', 'youtube_link', 'notes']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'get_progress_display']
+    autocomplete_fields = ['assigned_user', 'prompt_template']
     
     fieldsets = (
         ('Thông tin cơ bản', {
-            'fields': ('id', 'assigned_user', 'youtube_link', 'minio_input_path')
+            'fields': ('id', 'title', 'status', 'assigned_user', 'prompt_template')
         }),
-        ('Dữ liệu xử lý (JSON)', {
-            'fields': ('processing_details',),
-            'description': 'Danh sách các prompt, kết quả và link video đầu ra.'
+        ('Links', {
+            'fields': ('youtube_link', 'minio_input_link')
         }),
-        ('Thời gian hệ thống', {
+        ('Segments', {
+            'fields': ('segments', 'get_progress_display'),
+            'description': 'Danh sách các segments đã xử lý'
+        }),
+        ('Ghi chú', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
+        }),
+        ('Thông tin hệ thống', {
             'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',), # Ẩn đi mặc định
+            'classes': ('collapse',)
         }),
     )
-
-# Thay đổi tiêu đề trang Admin
-admin.site.site_header = "Hệ thống Quản lý Video Profile"
-admin.site.site_title = "Video Manager Admin"
-admin.site.index_title = "Bảng điều khiển hệ thống"
+    
+    def get_progress(self, obj):
+        """Display progress percentage"""
+        return f"{obj.get_progress_percentage()}%"
+    get_progress.short_description = 'Tiến độ'
+    
+    def get_progress_display(self, obj):
+        """Display detailed progress info"""
+        total = obj.get_total_segments()
+        processed = obj.get_processed_segments()
+        percentage = obj.get_progress_percentage()
+        return f"{processed}/{total} segments ({percentage}%)"
+    get_progress_display.short_description = 'Chi tiết tiến độ'

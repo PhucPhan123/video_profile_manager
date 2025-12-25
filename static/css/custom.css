@@ -1,0 +1,110 @@
+/* Custom CSS for Video Profile Manager */
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Video Preview Enhancements */
+.video-preview {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.video-preview:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
+}
+
+/* Segment Items */
+.segment-item {
+    transition: all 0.3s ease;
+}
+
+.segment-item:hover {
+    box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,.1);
+}
+
+/* Progress Bar Animation */
+.progress-bar {
+    transition: width 0.6s ease;
+}
+
+/* Badge Styles */
+.badge {
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+/* Button Hover Effects */
+.btn {
+    transition: all 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Table Hover */
+.table-hover tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+/* Loading Spinner */
+.spinner-border {
+    animation: spinner-border 0.75s linear infinite;
+}
+
+/* Form Focus */
+.form-control:focus,
+.form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13,110,253,.25);
+}
+
+/* Alert Animations */
+.alert {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Navbar */
+.navbar {
+    transition: box-shadow 0.3s ease;
+}
+
+/* Footer */
+.footer {
+    font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .main-content {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    .navbar,
+    .footer,
+    .btn,
+    .card-footer {
+        display: none;
+    }
+}

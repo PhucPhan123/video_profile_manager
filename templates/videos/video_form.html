@@ -1,112 +1,460 @@
 {% extends 'base.html' %}
+
+{% block title %}{% if video %}Sửa{% else %}Tạo{% endif %} Video Profile{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col-md-8">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">{% if video %}Sửa{% else %}Khởi tạo{% endif %} Video Profile</h5>
-            </div>
-            <div class="card-body">
-                <form method="POST">
-                    {% csrf_token %}
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">UUID</label>
-                            <input type="text" class="form-control" value="{{ video.id|default:'Tự động khởi tạo' }}" disabled>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Assigned User</label>
-                            <input type="text" name="assigned_user" class="form-control" value="{{ video.assigned_user }}" required>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Link YouTube</label>
-                        <div class="input-group">
-                            <input type="url" id="yt_link" name="youtube_link" class="form-control" value="{{ video.youtube_link }}">
-                            <button class="btn btn-outline-secondary" type="button" onclick="previewYoutube()">Preview YT</button>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Link Minio MP4 (Đầu vào)</label>
-                        <div class="input-group">
-                            <input type="text" id="minio_in" name="minio_input_path" class="form-control" value="{{ video.minio_input_path }}">
-                            <button class="btn btn-outline-secondary" type="button" onclick="previewMinio('minio_in', 'player_in')">Preview Input</button>
-                        </div>
-                    </div>
-
-                    <hr>
-                    <h6>Danh sách Objects (Prompts & Results)</h6>
-                    <div id="object-list">
-                        {% for item in video.processing_details %}
-                        <div class="border p-2 mb-2 rounded bg-light">
-                            <p><strong>Prompt:</strong> {{ item.prompt }}</p>
-                            <p><strong>Kết quả:</strong> {{ item.result }}</p>
-                            <div class="input-group input-group-sm">
-                                <input type="text" id="out_{{ forloop.counter }}" class="form-control" value="{{ item.output_path }}" readonly>
-                                <button class="btn btn-success" type="button" onclick="previewMinio('out_{{ forloop.counter }}', 'player_out')">Preview Output</button>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-primary">Lưu Profile</button>
-                        <a href="{% url 'video_list' %}" class="btn btn-secondary">Hủy</a>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-4">
-        <div class="sticky-top" style="top: 20px;">
-            <div class="card mb-3 shadow-sm">
-                <div class="card-header bg-dark text-white p-2 text-center small">YouTube Preview</div>
-                <div class="preview-container" id="yt_container">
-                    <div class="text-muted">Chưa có link YouTube</div>
-                </div>
-            </div>
-
-            <div class="card mb-3 shadow-sm">
-                <div class="card-header bg-dark text-white p-2 text-center small">Minio Input Preview</div>
-                <div class="preview-container">
-                    <video id="player_in" controls></video>
-                </div>
-            </div>
-
-            <div class="card mb-3 shadow-sm">
-                <div class="card-header bg-dark text-white p-2 text-center small">Minio Output Preview</div>
-                <div class="preview-container">
-                    <video id="player_out" controls></video>
-                </div>
-            </div>
-        </div>
+<div class="row mb-4">
+    <div class="col-12">
+        <h1>
+            <i class="bi bi-{% if video %}pencil-square{% else %}plus-circle{% endif %}"></i>
+            {% if video %}Sửa{% else %}Tạo{% endif %} Video Profile
+        </h1>
     </div>
 </div>
 
-<script>
-    function previewYoutube() {
-        const url = document.getElementById('yt_link').value;
-        const container = document.getElementById('yt_container');
-        if (url.includes('v=')) {
-            const videoId = url.split('v=')[1].split('&')[0];
-            container.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>`;
-        } else {
-            alert('Link YouTube không hợp lệ!');
-        }
-    }
+<form method="post" id="videoForm">
+    {% csrf_token %}
+    
+    <div class="row">
+        <!-- Left Column: Form -->
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Thông tin cơ bản</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tiêu đề <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="title" 
+                               value="{{ video.title|default:'' }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Link YouTube</label>
+                        <input type="url" class="form-control" name="youtube_link" id="youtube_link"
+                               value="{{ video.youtube_link|default:'' }}" 
+                               placeholder="https://www.youtube.com/watch?v=...">
+                        <small class="form-text text-muted">
+                            Nhập link YouTube để preview
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Link Minio Input</label>
+                        <input type="text" class="form-control" name="minio_input_link" id="minio_input_link"
+                               value="{{ video.minio_input_link|default:'' }}" 
+                               placeholder="inputs/video.mp4">
+                        <small class="form-text text-muted">
+                            Đường dẫn file MP4 trên Minio (vd: inputs/video.mp4)
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Người phụ trách</label>
+                        <select class="form-select" name="assigned_user">
+                            <option value="">-- Chọn người phụ trách --</option>
+                            {% for user in users %}
+                            <option value="{{ user.id }}" 
+                                    {% if video and video.assigned_user.id == user.id %}selected{% endif %}>
+                                {{ user.username }} ({{ user.get_full_name|default:user.email }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Prompt Template</label>
+                        <div class="input-group">
+                            <select class="form-select" name="prompt_template" id="prompt_template">
+                                <option value="">-- Chọn template --</option>
+                                {% for template in prompt_templates %}
+                                <option value="{{ template.id }}" 
+                                        {% if video and video.prompt_template.id == template.id %}selected{% endif %}>
+                                    {{ template.name }} ({{ template.get_category_display }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-outline-secondary" 
+                                    onclick="generatePromptFromTemplate()">
+                                <i class="bi bi-magic"></i> Generate
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">
+                            Chọn template và click Generate để tạo prompt tự động
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Ghi chú</label>
+                        <textarea class="form-control" name="notes" rows="3">{{ video.notes|default:'' }}</textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Segments Management -->
+            {% if video %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-film"></i> Quản lý Segments</h5>
+                    <button type="button" class="btn btn-sm btn-light" onclick="addNewSegment()">
+                        <i class="bi bi-plus-circle"></i> Thêm Segment
+                    </button>
+                </div>
+                <div class="card-body" id="segmentsContainer">
+                    <!-- Segments will be loaded here -->
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Right Column: Preview -->
+        <div class="col-lg-6">
+            <!-- YouTube Preview -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-youtube"></i> Preview YouTube</h5>
+                </div>
+                <div class="card-body">
+                    <div class="video-preview" id="youtubePreview">
+                        <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                            <div class="text-center">
+                                <i class="bi bi-youtube" style="font-size: 3rem;"></i>
+                                <p class="mt-2">Nhập link YouTube để preview</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Input Video Preview -->
+            {% if video and input_presigned_url %}
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-play-circle"></i> Preview Video Input</h5>
+                </div>
+                <div class="card-body">
+                    <div class="video-preview">
+                        <video controls>
+                            <source src="{{ input_presigned_url }}" type="video/mp4">
+                            Trình duyệt không hỗ trợ video.
+                        </video>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Submit Buttons -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <input type="hidden" name="segments" id="segmentsData" value="{{ segments_json|default:'[]' }}">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-save"></i> Lưu
+                    </button>
+                    <a href="{% url 'video_list' %}" class="btn btn-secondary btn-lg">
+                        <i class="bi bi-x-circle"></i> Hủy
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
 
-    function previewMinio(inputId, videoTagId) {
-        const url = document.getElementById(inputId).value;
-        const videoTag = document.getElementById(videoTagId);
-        if (url) {
-            videoTag.src = url;
-            videoTag.play();
-        } else {
-            alert('Vui lòng nhập link MP4!');
+<!-- Segment Template (Hidden) -->
+<template id="segmentTemplate">
+    <div class="segment-item" data-index="">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <h6><i class="bi bi-film"></i> Segment <span class="segment-number"></span></h6>
+            <button type="button" class="btn btn-sm btn-danger" onclick="deleteSegment(this)">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+        
+        <div class="mb-2">
+            <label class="form-label">Prompt</label>
+            <textarea class="form-control segment-prompt" rows="2"></textarea>
+        </div>
+        
+        <div class="mb-2">
+            <label class="form-label">Result</label>
+            <textarea class="form-control segment-result" rows="2"></textarea>
+        </div>
+        
+        <div class="row mb-2">
+            <div class="col-md-6">
+                <label class="form-label">Start Time (giây)</label>
+                <input type="number" class="form-control segment-start" min="0" step="0.1">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">End Time (giây)</label>
+                <input type="number" class="form-control segment-end" min="0" step="0.1">
+            </div>
+        </div>
+        
+        <button type="button" class="btn btn-sm btn-success" onclick="processSegment(this)">
+            <i class="bi bi-scissors"></i> Cắt Video
+        </button>
+        
+        <div class="segment-output mt-3" style="display: none;">
+            <hr>
+            <h6><i class="bi bi-check-circle text-success"></i> Output</h6>
+            <div class="video-preview">
+                <video controls class="segment-output-video">
+                    <source src="" type="video/mp4">
+                </video>
+            </div>
+            <small class="text-muted segment-output-link"></small>
+        </div>
+    </div>
+</template>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Global variables
+    let segments = {{ segments_json|safe }};
+    const videoId = '{{ video.id|default:"" }}';
+    
+    // YouTube Preview
+    document.getElementById('youtube_link').addEventListener('change', function() {
+        updateYoutubePreview(this.value);
+    });
+    
+    function updateYoutubePreview(url) {
+        const preview = document.getElementById('youtubePreview');
+        
+        if (!url) {
+            preview.innerHTML = `
+                <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                    <div class="text-center">
+                        <i class="bi bi-youtube" style="font-size: 3rem;"></i>
+                        <p class="mt-2">Nhập link YouTube để preview</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        // Extract video ID
+        let videoId = null;
+        if (url.includes('youtube.com/watch?v=')) {
+            videoId = url.split('v=')[1]?.split('&')[0];
+        } else if (url.includes('youtu.be/')) {
+            videoId = url.split('youtu.be/')[1]?.split('?')[0];
+        }
+        
+        if (videoId) {
+            preview.innerHTML = `
+                <iframe src="https://www.youtube.com/embed/${videoId}" 
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen>
+                </iframe>
+            `;
         }
     }
+    
+    // Initialize YouTube preview if exists
+    {% if video.youtube_link %}
+    updateYoutubePreview('{{ video.youtube_link }}');
+    {% endif %}
+    
+    // Generate Prompt from Template
+    function generatePromptFromTemplate() {
+        const templateId = document.getElementById('prompt_template').value;
+        const youtubeLink = document.getElementById('youtube_link').value;
+        
+        if (!templateId) {
+            alert('Vui lòng chọn Prompt Template');
+            return;
+        }
+        
+        showLoading();
+        
+        fetch('/videos/api/generate-prompt/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify({
+                template_id: templateId,
+                youtube_link: youtubeLink
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                // Add new segment with generated prompt
+                const newSegment = {
+                    prompt: data.prompt,
+                    result: '',
+                    minio_output_link: null,
+                    start_time: null,
+                    end_time: null
+                };
+                segments.push(newSegment);
+                renderSegments();
+                alert('Đã tạo prompt mới!');
+            } else {
+                alert('Lỗi: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('Lỗi: ' + error);
+        });
+    }
+    
+    // Segments Management
+    function renderSegments() {
+        const container = document.getElementById('segmentsContainer');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (segments.length === 0) {
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Chưa có segment nào. Click "Thêm Segment" để bắt đầu.
+                </div>
+            `;
+            return;
+        }
+        
+        segments.forEach((segment, index) => {
+            const template = document.getElementById('segmentTemplate');
+            const clone = template.content.cloneNode(true);
+            
+            const item = clone.querySelector('.segment-item');
+            item.setAttribute('data-index', index);
+            item.querySelector('.segment-number').textContent = index + 1;
+            item.querySelector('.segment-prompt').value = segment.prompt || '';
+            item.querySelector('.segment-result').value = segment.result || '';
+            item.querySelector('.segment-start').value = segment.start_time || '';
+            item.querySelector('.segment-end').value = segment.end_time || '';
+            
+            // Show output if exists
+            if (segment.minio_output_link && segment.presigned_url) {
+                const outputDiv = item.querySelector('.segment-output');
+                outputDiv.style.display = 'block';
+                outputDiv.querySelector('.segment-output-video source').src = segment.presigned_url;
+                outputDiv.querySelector('.segment-output-video').load();
+                outputDiv.querySelector('.segment-output-link').textContent = segment.minio_output_link;
+            }
+            
+            container.appendChild(clone);
+        });
+        
+        // Update hidden input
+        document.getElementById('segmentsData').value = JSON.stringify(segments);
+    }
+    
+    function addNewSegment() {
+        const newSegment = {
+            prompt: '',
+            result: '',
+            minio_output_link: null,
+            start_time: null,
+            end_time: null
+        };
+        segments.push(newSegment);
+        renderSegments();
+    }
+    
+    function deleteSegment(btn) {
+        const item = btn.closest('.segment-item');
+        const index = parseInt(item.getAttribute('data-index'));
+        
+        if (confirm('Bạn có chắc muốn xóa segment này?')) {
+            segments.splice(index, 1);
+            renderSegments();
+        }
+    }
+    
+    function processSegment(btn) {
+        const item = btn.closest('.segment-item');
+        const index = parseInt(item.getAttribute('data-index'));
+        
+        const startTime = parseFloat(item.querySelector('.segment-start').value);
+        const endTime = parseFloat(item.querySelector('.segment-end').value);
+        
+        if (!startTime && startTime !== 0 || !endTime) {
+            alert('Vui lòng nhập Start Time và End Time');
+            return;
+        }
+        
+        if (startTime >= endTime) {
+            alert('Start Time phải nhỏ hơn End Time');
+            return;
+        }
+        
+        if (!videoId) {
+            alert('Video chưa được lưu. Vui lòng lưu video trước khi cắt.');
+            return;
+        }
+        
+        // Update segment data
+        segments[index].prompt = item.querySelector('.segment-prompt').value;
+        segments[index].result = item.querySelector('.segment-result').value;
+        segments[index].start_time = startTime;
+        segments[index].end_time = endTime;
+        
+        showLoading();
+        
+        fetch('/videos/api/process-segment/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify({
+                video_id: videoId,
+                segment_index: index,
+                start_time: startTime,
+                end_time: endTime
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                segments[index].minio_output_link = data.output_link;
+                segments[index].presigned_url = data.presigned_url;
+                renderSegments();
+                alert('Đã cắt video thành công!');
+            } else {
+                alert('Lỗi: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('Lỗi: ' + error);
+        });
+    }
+    
+    // Sync segments before form submit
+    document.getElementById('videoForm').addEventListener('submit', function(e) {
+        // Update segments from UI
+        document.querySelectorAll('.segment-item').forEach((item) => {
+            const index = parseInt(item.getAttribute('data-index'));
+            segments[index].prompt = item.querySelector('.segment-prompt').value;
+            segments[index].result = item.querySelector('.segment-result').value;
+            segments[index].start_time = parseFloat(item.querySelector('.segment-start').value) || null;
+            segments[index].end_time = parseFloat(item.querySelector('.segment-end').value) || null;
+        });
+        
+        document.getElementById('segmentsData').value = JSON.stringify(segments);
+    });
+    
+    // Initialize segments on page load
+    {% if video %}
+    renderSegments();
+    {% endif %}
 </script>
 {% endblock %}

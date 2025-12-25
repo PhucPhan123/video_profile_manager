@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block title %}Quản lý Prompt Templates{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1><i class="bi bi-file-text"></i> Quản lý Prompt Templates</h1>
+            <a href="{% url 'prompt_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Tạo Prompt Mới
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Thể loại</label>
+                        <select name="category" class="form-select">
+                            <option value="">Tất cả</option>
+                            {% for value, label in category_choices %}
+                            <option value="{{ value }}" {% if request.GET.category == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Trạng thái</label>
+                        <select name="is_active" class="form-select">
+                            <option value="">Tất cả</option>
+                            <option value="true" {% if request.GET.is_active == 'true' %}selected{% endif %}>Đang hoạt động</option>
+                            <option value="false" {% if request.GET.is_active == 'false' %}selected{% endif %}>Không hoạt động</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-search"></i> Lọc
+                            </button>
+                            <a href="{% url 'prompt_list' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Reset
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Prompt List -->
+<div class="row">
+    {% if prompts %}
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Tên Template</th>
+                                    <th>Thể loại</th>
+                                    <th>Trạng thái</th>
+                                    <th>Ngày tạo</th>
+                                    <th>Ngày cập nhật</th>
+                                    <th style="width: 150px;">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for prompt in prompts %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'prompt_edit' prompt.id %}" class="text-decoration-none">
+                                            <strong>{{ prompt.name }}</strong>
+                                        </a>
+                                        {% if prompt.description %}
+                                        <br>
+                                        <small class="text-muted">{{ prompt.description|truncatewords:15 }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ prompt.get_category_display }}</span>
+                                    </td>
+                                    <td>
+                                        {% if prompt.is_active %}
+                                            <span class="badge bg-success">Hoạt động</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Không hoạt động</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ prompt.created_at|date:"d/m/Y H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ prompt.updated_at|date:"d/m/Y H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <a href="{% url 'prompt_edit' prompt.id %}" 
+                                               class="btn btn-outline-primary" title="Sửa">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger" 
+                                                    onclick="deletePrompt('{{ prompt.id }}', '{{ prompt.name }}')" 
+                                                    title="Xóa">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="col-12">
+            <div class="alert alert-info text-center">
+                <i class="bi bi-info-circle"></i> Chưa có prompt template nào. 
+                <a href="{% url 'prompt_create' %}">Tạo prompt mới</a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Xác nhận xóa</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                Bạn có chắc chắn muốn xóa prompt template "<span id="deletePromptName"></span>"?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <form id="deleteForm" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Xóa</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    
+    function deletePrompt(promptId, promptName) {
+        document.getElementById('deletePromptName').textContent = promptName;
+        document.getElementById('deleteForm').action = `/videos/prompts/${promptId}/delete/`;
+        deleteModal.show();
+    }
+</script>
+{% endblock %}

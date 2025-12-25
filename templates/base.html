@@ -1,4 +1,3 @@
-<!-- templates/base.html -->
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -7,12 +6,10 @@
     <title>{% block title %}Video Profile Management{% endblock %}</title>
     
     <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     
-    <!-- Custom CSS -->
     <style>
         :root {
             --primary-color: #0d6efd;
@@ -20,7 +17,6 @@
             --success-color: #198754;
             --danger-color: #dc3545;
             --warning-color: #ffc107;
-            --info-color: #0dcaf0;
         }
         
         body {
@@ -32,109 +28,93 @@
             box-shadow: 0 2px 4px rgba(0,0,0,.1);
         }
         
-        .sidebar {
-            min-height: calc(100vh - 56px);
-            background-color: #fff;
-            box-shadow: 2px 0 4px rgba(0,0,0,.05);
-        }
-        
-        .sidebar .nav-link {
-            color: #495057;
-            padding: 0.75rem 1rem;
-            border-radius: 0.25rem;
-            margin-bottom: 0.25rem;
-        }
-        
-        .sidebar .nav-link:hover {
-            background-color: #e9ecef;
-            color: var(--primary-color);
-        }
-        
-        .sidebar .nav-link.active {
-            background-color: var(--primary-color);
-            color: white;
-        }
-        
-        .sidebar .nav-link i {
-            margin-right: 0.5rem;
-        }
-        
         .main-content {
-            padding: 2rem;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            min-height: calc(100vh - 56px);
         }
         
         .card {
             border: none;
             box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075);
-            margin-bottom: 1.5rem;
+            transition: transform 0.2s;
         }
         
-        .card-header {
-            background-color: #fff;
-            border-bottom: 2px solid var(--primary-color);
-            font-weight: 600;
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
         }
         
-        .btn {
-            padding: 0.5rem 1.5rem;
+        .badge {
+            padding: 0.5em 0.8em;
         }
         
         .video-preview {
-            position: relative;
-            width: 100%;
-            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
-            height: 0;
+            border-radius: 8px;
             overflow: hidden;
+            background: #000;
+            aspect-ratio: 16/9;
         }
         
-        .video-preview iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
+        .video-preview iframe,
+        .video-preview video {
             width: 100%;
             height: 100%;
-            border: none;
-            border-radius: 0.25rem;
+            object-fit: contain;
         }
         
-        .status-badge {
-            padding: 0.35em 0.65em;
-            font-size: 0.875rem;
-            font-weight: 600;
+        .segment-item {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: white;
         }
         
-        .table-actions {
-            white-space: nowrap;
-        }
-        
-        .table-actions .btn {
+        .btn-group-sm > .btn {
             padding: 0.25rem 0.5rem;
             font-size: 0.875rem;
         }
         
-        .alert {
-            border-radius: 0.5rem;
-            border: none;
+        .progress {
+            height: 1.5rem;
+        }
+        
+        .footer {
+            background-color: #f8f9fa;
+            padding: 2rem 0;
+            margin-top: 3rem;
+            border-top: 1px solid #dee2e6;
         }
         
         .loading-spinner {
             display: none;
-            text-align: center;
-            padding: 2rem;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 9999;
         }
         
-        .loading-spinner.show {
-            display: block;
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9998;
         }
     </style>
     
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <!-- Navbar -->
+    <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'videos:dashboard' %}">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'video_list' %}">
                 <i class="bi bi-camera-video"></i> Video Profile Manager
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -142,108 +122,89 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-person-circle"></i> {{ user.username }}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'video_list' %}active{% endif %}" 
+                           href="{% url 'video_list' %}">
+                            <i class="bi bi-list-ul"></i> Quản lý Video
                         </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="/admin/"><i class="bi bi-gear"></i> Admin Panel</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{% url 'admin:logout' %}"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a></li>
-                        </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'video_create' %}active{% endif %}" 
+                           href="{% url 'video_create' %}">
+                            <i class="bi bi-plus-circle"></i> Tạo Video
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'prompt_list' %}active{% endif %}" 
+                           href="{% url 'prompt_list' %}">
+                            <i class="bi bi-file-text"></i> Quản lý Prompt
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'prompt_create' %}active{% endif %}" 
+                           href="{% url 'prompt_create' %}">
+                            <i class="bi bi-plus-square"></i> Tạo Prompt
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/">
+                            <i class="bi bi-gear"></i> Admin
+                        </a>
                     </li>
                 </ul>
             </div>
         </div>
     </nav>
 
-    <div class="container-fluid">
-        <div class="row">
-            <!-- Sidebar -->
-            <div class="col-md-2 sidebar p-3">
-                <nav class="nav flex-column">
-                    <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" 
-                       href="{% url 'videos:dashboard' %}">
-                        <i class="bi bi-speedometer2"></i> Dashboard
-                    </a>
-                    
-                    <hr>
-                    
-                    <h6 class="text-muted text-uppercase px-3 mb-2" style="font-size: 0.75rem;">
-                        Video Management
-                    </h6>
-                    
-                    <a class="nav-link {% if 'video_list' in request.resolver_match.url_name %}active{% endif %}" 
-                       href="{% url 'videos:video_list' %}">
-                        <i class="bi bi-collection-play"></i> Quản lý Video
-                    </a>
-                    
-                    <a class="nav-link {% if 'video_create' in request.resolver_match.url_name %}active{% endif %}" 
-                       href="{% url 'videos:video_create' %}">
-                        <i class="bi bi-plus-circle"></i> Tạo Video Mới
-                    </a>
-                    
-                    <hr>
-                    
-                    <h6 class="text-muted text-uppercase px-3 mb-2" style="font-size: 0.75rem;">
-                        Prompt Management
-                    </h6>
-                    
-                    <a class="nav-link {% if 'prompt_list' in request.resolver_match.url_name %}active{% endif %}" 
-                       href="{% url 'videos:prompt_list' %}">
-                        <i class="bi bi-card-text"></i> Quản lý Prompt
-                    </a>
-                    
-                    <a class="nav-link {% if 'prompt_create' in request.resolver_match.url_name %}active{% endif %}" 
-                       href="{% url 'videos:prompt_create' %}">
-                        <i class="bi bi-file-earmark-plus"></i> Tạo Prompt Mới
-                    </a>
-                </nav>
-            </div>
+    <!-- Messages -->
+    {% if messages %}
+    <div class="container mt-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 
-            <!-- Main Content -->
-            <div class="col-md-10 main-content">
-                <!-- Messages -->
-                {% if messages %}
-                    <div class="messages-container">
-                        {% for message in messages %}
-                            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                                {% if message.tags == 'error' %}
-                                    <i class="bi bi-exclamation-triangle-fill"></i>
-                                {% elif message.tags == 'success' %}
-                                    <i class="bi bi-check-circle-fill"></i>
-                                {% elif message.tags == 'warning' %}
-                                    <i class="bi bi-exclamation-circle-fill"></i>
-                                {% elif message.tags == 'info' %}
-                                    <i class="bi bi-info-circle-fill"></i>
-                                {% endif %}
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
 
-                <!-- Page Content -->
-                {% block content %}{% endblock %}
-            </div>
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container text-center text-muted">
+            <p>&copy; 2024 Video Profile Management System. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay"></div>
+    <div class="loading-spinner" id="loadingSpinner">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
         </div>
     </div>
 
     <!-- Bootstrap 5 JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- jQuery (for AJAX) -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    
-    <!-- Custom JS -->
     <script>
-        // Auto-hide messages after 5 seconds
-        setTimeout(function() {
-            $('.alert').fadeOut('slow');
-        }, 5000);
+        // Utility functions
+        function showLoading() {
+            document.getElementById('loadingOverlay').style.display = 'block';
+            document.getElementById('loadingSpinner').style.display = 'block';
+        }
         
-        // CSRF Token setup for AJAX
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('loadingSpinner').style.display = 'none';
+        }
+        
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -261,13 +222,14 @@
         
         const csrftoken = getCookie('csrftoken');
         
-        $.ajaxSetup({
-            beforeSend: function(xhr, settings) {
-                if (!(/^http:.*/.test(settings.url) || /^https:.*/.test(settings.url))) {
-                    xhr.setRequestHeader("X-CSRFToken", csrftoken);
-                }
-            }
-        });
+        // Auto-hide alerts after 5 seconds
+        setTimeout(function() {
+            let alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                let bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
     </script>
     
     {% block extra_js %}{% endblock %}
