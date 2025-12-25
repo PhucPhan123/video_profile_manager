@@ -65,7 +65,7 @@ video_profile_manager/
 ├── .env                       # Environment variables
 ├── .gitignore
 ├── Dockerfile
-├── docker-compose.yml
+├── docker compose.yml
 ├── manage.py
 ├── requirements.txt
 └── README.md
@@ -99,14 +99,14 @@ MINIO_SECRET_KEY=minioadmin
 ### 4. Khởi chạy hệ thống
 ```bash
 # Build và chạy các container
-docker-compose up --build -d
+docker compose up --build -d
 
 # Chạy migrations
-docker-compose exec web python manage.py makemigrations
-docker-compose exec web python manage.py migrate
+docker compose exec web python manage.py makemigrations
+docker compose exec web python manage.py migrate
 
 # Tạo superuser
-docker-compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py createsuperuser
 ```
 
 ### 5. Truy cập
@@ -150,28 +150,28 @@ docker-compose exec web python manage.py createsuperuser
 
 ```bash
 # Xem logs
-docker-compose logs -f web
+docker compose logs -f web
 
 # Restart services
-docker-compose restart
+docker compose restart
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # Remove all volumes (WARNING: Xóa data)
-docker-compose down -v
+docker compose down -v
 
 # Access Django shell
-docker-compose exec web python manage.py shell
+docker compose exec web python manage.py shell
 
 # Create migrations
-docker-compose exec web python manage.py makemigrations
+docker compose exec web python manage.py makemigrations
 
 # Apply migrations
-docker-compose exec web python manage.py migrate
+docker compose exec web python manage.py migrate
 
 # Collect static files
-docker-compose exec web python manage.py collectstatic --noinput
+docker compose exec web python manage.py collectstatic --noinput
 ```
 
 ## ⚠️ Lưu ý kỹ thuật
@@ -197,22 +197,22 @@ MoviePy xử lý video trong bộ nhớ tạm `/tmp` của container. Đảm b�
 ### Container không start
 ```bash
 # Check logs
-docker-compose logs web
-docker-compose logs db
-docker-compose logs minio
+docker compose logs web
+docker compose logs db
+docker compose logs minio
 
 # Rebuild
-docker-compose down
-docker-compose up --build
+docker compose down
+docker compose up --build
 ```
 
 ### Database connection error
 ```bash
 # Wait for db to be ready
-docker-compose exec db pg_isready -U admin
+docker compose exec db pg_isready -U admin
 
 # Restart web service
-docker-compose restart web
+docker compose restart web
 ```
 
 ### Minio connection error
