@@ -5,5 +5,5 @@ moviepy==1.0.3
 python-dotenv==1.0.0
 Pillow==10.1.0
 requests==2.31.0
-django-crispy-forms==2.1
-crispy-bootstrap5==2.0.0
+django-crispy-forms>=2.0
+crispy-bootstrap5>=2024.2

@@ -251,7 +251,7 @@ chmod +x start.sh
 ./start.sh
 
 # 2. Tạo superuser
-docker-compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py createsuperuser
 
 # 3. Truy cập
 # - Website: http://localhost:8000
