@@ -1,6 +1,9 @@
-django==4.2
-psycopg2-binary
-moviepy
-minio
-boto3
-django-environ
+Django==4.2.7
+psycopg2-binary==2.9.9
+minio==7.2.0
+moviepy==1.0.3
+python-dotenv==1.0.0
+Pillow==10.1.0
+requests==2.31.0
+django-crispy-forms==2.1
+crispy-bootstrap5==2.0.0

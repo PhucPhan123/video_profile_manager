@@ -1,25 +1,31 @@
-# Sử dụng Python 3.11 như yêu cầu
 FROM python:3.11-slim
 
-# Cài đặt các thư viện hệ thống cần thiết cho MoviePy và PostgreSQL
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies for moviepy and PostgreSQL
 RUN apt-get update && apt-get install -y \
+    ffmpeg \
     libpq-dev \
     gcc \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Thiết lập thư mục làm việc
+# Set work directory
 WORKDIR /app
 
-# Sao chép và cài đặt requirements
-COPY requirements.txt .
+# Install Python dependencies
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Sao chép toàn bộ mã nguồn vào container
-COPY . .
+# Copy project
+COPY . /app/
 
-# Mở port 8000 cho Django
+# Create directories for static and media files
+RUN mkdir -p /app/staticfiles /app/mediafiles
+
+# Expose port
 EXPOSE 8000
 
-# Lệnh chạy mặc định
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Run migrations and start server
+CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]

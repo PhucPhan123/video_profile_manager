@@ -1,467 +1,317 @@
-# apps/videos/utils.py
+"""
+Utility functions for Minio and MoviePy operations
+"""
 import os
-import re
 import tempfile
-import logging
-from typing import Optional, Dict, Any
-from urllib.parse import urlparse, parse_qs
-from moviepy.editor import VideoFileClip
 from minio import Minio
 from minio.error import S3Error
 from django.conf import settings
-import yt_dlp
+from moviepy.editor import VideoFileClip
+import logging
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# YOUTUBE UTILITIES
-# ============================================================
-
-def extract_youtube_video_id(url: str) -> Optional[str]:
-    """
-    Extract Youtube video ID from URL
+class MinioClient:
+    """Singleton Minio Client"""
     
-    Args:
-        url: Youtube URL
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(MinioClient, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+    
+    def _initialize(self):
+        """Initialize Minio client"""
+        self.client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_USE_SSL
+        )
+        self.bucket_name = settings.MINIO_BUCKET
+        self._ensure_bucket_exists()
+    
+    def _ensure_bucket_exists(self):
+        """Tạo bucket nếu chưa tồn tại"""
+        try:
+            if not self.client.bucket_exists(self.bucket_name):
+                self.client.make_bucket(self.bucket_name)
+                logger.info(f"Created bucket: {self.bucket_name}")
+        except S3Error as e:
+            logger.error(f"Error creating bucket: {e}")
+    
+    def upload_file(self, file_path, object_name):
+        """
+        Upload file lên Minio
         
-    Returns:
-        Video ID or None if not found
-    """
-    # Pattern for youtube URLs
-    patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
-        r'youtube\.com\/watch\?.*v=([^&\n?#]+)'
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    
-    return None
-
-
-def get_youtube_metadata(url: str) -> Dict[str, Any]:
-    """
-    Get metadata from Youtube video using yt-dlp
-    
-    Args:
-        url: Youtube URL
+        Args:
+            file_path: Đường dẫn file local
+            object_name: Tên object trên Minio
         
-    Returns:
-        Dictionary containing video metadata
-    """
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': False,
-    }
+        Returns:
+            str: Object name nếu thành công, None nếu thất bại
+        """
+        try:
+            self.client.fput_object(
+                self.bucket_name,
+                object_name,
+                file_path,
+            )
+            logger.info(f"Uploaded {file_path} to {object_name}")
+            return object_name
+        except S3Error as e:
+            logger.error(f"Error uploading file: {e}")
+            return None
     
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+    def download_file(self, object_name, file_path):
+        """
+        Download file từ Minio
+        
+        Args:
+            object_name: Tên object trên Minio
+            file_path: Đường dẫn lưu file local
+        
+        Returns:
+            str: File path nếu thành công, None nếu thất bại
+        """
+        try:
+            self.client.fget_object(
+                self.bucket_name,
+                object_name,
+                file_path,
+            )
+            logger.info(f"Downloaded {object_name} to {file_path}")
+            return file_path
+        except S3Error as e:
+            logger.error(f"Error downloading file: {e}")
+            return None
+    
+    def get_presigned_url(self, object_name, expires=3600):
+        """
+        Lấy presigned URL cho object
+        
+        Args:
+            object_name: Tên object trên Minio
+            expires: Thời gian hết hạn (giây)
+        
+        Returns:
+            str: Presigned URL
+        """
+        try:
+            url = self.client.presigned_get_object(
+                self.bucket_name,
+                object_name,
+                expires=expires
+            )
+            return url
+        except S3Error as e:
+            logger.error(f"Error generating presigned URL: {e}")
+            return None
+    
+    def delete_file(self, object_name):
+        """
+        Xóa file từ Minio
+        
+        Args:
+            object_name: Tên object trên Minio
+        
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
+        try:
+            self.client.remove_object(self.bucket_name, object_name)
+            logger.info(f"Deleted {object_name}")
+            return True
+        except S3Error as e:
+            logger.error(f"Error deleting file: {e}")
+            return False
+    
+    def list_objects(self, prefix=''):
+        """
+        Liệt kê objects trong bucket
+        
+        Args:
+            prefix: Prefix để filter objects
+        
+        Returns:
+            list: Danh sách object names
+        """
+        try:
+            objects = self.client.list_objects(self.bucket_name, prefix=prefix)
+            return [obj.object_name for obj in objects]
+        except S3Error as e:
+            logger.error(f"Error listing objects: {e}")
+            return []
+
+
+class VideoProcessor:
+    """Video processing utilities using MoviePy"""
+    
+    def __init__(self):
+        self.minio_client = MinioClient()
+    
+    def cut_video(self, input_path, output_path, start_time, end_time):
+        """
+        Cắt video từ start_time đến end_time
+        
+        Args:
+            input_path: Đường dẫn video đầu vào
+            output_path: Đường dẫn video đầu ra
+            start_time: Thời gian bắt đầu (giây)
+            end_time: Thời gian kết thúc (giây)
+        
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
+        try:
+            logger.info(f"Cutting video from {start_time}s to {end_time}s")
             
-            metadata = {
-                'title': info.get('title', ''),
-                'description': info.get('description', ''),
-                'duration': info.get('duration', 0),
-                'uploader': info.get('uploader', ''),
-                'upload_date': info.get('upload_date', ''),
-                'view_count': info.get('view_count', 0),
-                'like_count': info.get('like_count', 0),
-                'tags': info.get('tags', []),
-                'thumbnail': info.get('thumbnail', ''),
-                'channel': info.get('channel', ''),
-                'channel_id': info.get('channel_id', ''),
-            }
+            # Load video
+            video = VideoFileClip(input_path)
             
-            return metadata
+            # Validate time range
+            if start_time < 0:
+                start_time = 0
+            if end_time > video.duration:
+                end_time = video.duration
+            if start_time >= end_time:
+                raise ValueError(f"Invalid time range: {start_time}s to {end_time}s")
             
-    except Exception as e:
-        logger.error(f"Error getting Youtube metadata: {str(e)}")
-        raise Exception(f"Không thể lấy metadata từ Youtube: {str(e)}")
-
-
-def download_youtube_video(url: str, output_path: Optional[str] = None) -> str:
-    """
-    Download Youtube video
-    
-    Args:
-        url: Youtube URL
-        output_path: Output file path (optional)
-        
-    Returns:
-        Path to downloaded video file
-    """
-    if not output_path:
-        output_path = tempfile.mktemp(suffix='.mp4')
-    
-    ydl_opts = {
-        'format': 'best[ext=mp4]',
-        'outtmpl': output_path,
-        'quiet': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            # Cut video
+            cut_clip = video.subclip(start_time, end_time)
             
-        return output_path
-        
-    except Exception as e:
-        logger.error(f"Error downloading Youtube video: {str(e)}")
-        raise Exception(f"Không thể tải video từ Youtube: {str(e)}")
-
-
-# ============================================================
-# MINIO UTILITIES
-# ============================================================
-
-def get_minio_client() -> Minio:
-    """
-    Get Minio client instance
+            # Write output
+            cut_clip.write_videofile(
+                output_path,
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True,
+                logger=None
+            )
+            
+            # Clean up
+            cut_clip.close()
+            video.close()
+            
+            logger.info(f"Video cut successfully: {output_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error cutting video: {e}")
+            return False
     
-    Returns:
-        Minio client
-    """
-    return Minio(
-        endpoint=settings.MINIO_ENDPOINT,
-        access_key=settings.MINIO_ACCESS_KEY,
-        secret_key=settings.MINIO_SECRET_KEY,
-        secure=settings.MINIO_USE_SSL
-    )
-
-
-def upload_to_minio(file_path: str, bucket: str, object_name: str) -> str:
-    """
-    Upload file to Minio
+    def process_segment(self, minio_input_path, start_time, end_time, segment_index):
+        """
+        Xử lý 1 segment: download từ Minio, cắt video, upload lại
+        
+        Args:
+            minio_input_path: Đường dẫn file input trên Minio
+            start_time: Thời gian bắt đầu (giây)
+            end_time: Thời gian kết thúc (giây)
+            segment_index: Index của segment
+        
+        Returns:
+            str: Đường dẫn output trên Minio nếu thành công, None nếu thất bại
+        """
+        temp_input = None
+        temp_output = None
+        
+        try:
+            # Create temporary files
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                temp_input = f.name
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                temp_output = f.name
+            
+            # Download input video from Minio
+            logger.info(f"Downloading input video: {minio_input_path}")
+            if not self.minio_client.download_file(minio_input_path, temp_input):
+                raise Exception("Failed to download input video")
+            
+            # Cut video
+            if not self.cut_video(temp_input, temp_output, start_time, end_time):
+                raise Exception("Failed to cut video")
+            
+            # Generate output path on Minio
+            base_name = os.path.splitext(os.path.basename(minio_input_path))[0]
+            output_name = f"outputs/{base_name}_segment_{segment_index}_{start_time}_{end_time}.mp4"
+            
+            # Upload output video to Minio
+            logger.info(f"Uploading output video: {output_name}")
+            if not self.minio_client.upload_file(temp_output, output_name):
+                raise Exception("Failed to upload output video")
+            
+            return output_name
+            
+        except Exception as e:
+            logger.error(f"Error processing segment: {e}")
+            return None
+            
+        finally:
+            # Clean up temporary files
+            if temp_input and os.path.exists(temp_input):
+                os.remove(temp_input)
+            if temp_output and os.path.exists(temp_output):
+                os.remove(temp_output)
     
-    Args:
-        file_path: Path to file to upload
-        bucket: Minio bucket name
-        object_name: Object name in bucket
+    def get_video_duration(self, minio_path):
+        """
+        Lấy độ dài video (giây)
         
-    Returns:
-        URL to uploaded file
-    """
-    try:
-        client = get_minio_client()
+        Args:
+            minio_path: Đường dẫn file trên Minio
         
-        # Create bucket if not exists
-        if not client.bucket_exists(bucket):
-            client.make_bucket(bucket)
-            logger.info(f"Created bucket: {bucket}")
-        
-        # Upload file
-        client.fput_object(
-            bucket_name=bucket,
-            object_name=object_name,
-            file_path=file_path,
-        )
-        
-        # Generate URL
-        url = f"{settings.MINIO_EXTERNAL_ENDPOINT}/{bucket}/{object_name}"
-        
-        logger.info(f"Uploaded to Minio: {url}")
-        return url
-        
-    except S3Error as e:
-        logger.error(f"Minio S3 Error: {str(e)}")
-        raise Exception(f"Lỗi khi upload lên Minio: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error uploading to Minio: {str(e)}")
-        raise Exception(f"Lỗi khi upload: {str(e)}")
+        Returns:
+            float: Độ dài video (giây), None nếu lỗi
+        """
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                temp_file = f.name
+            
+            if not self.minio_client.download_file(minio_path, temp_file):
+                return None
+            
+            video = VideoFileClip(temp_file)
+            duration = video.duration
+            video.close()
+            
+            return duration
+            
+        except Exception as e:
+            logger.error(f"Error getting video duration: {e}")
+            return None
+            
+        finally:
+            if temp_file and os.path.exists(temp_file):
+                os.remove(temp_file)
 
 
-def download_from_minio(bucket: str, object_name: str, output_path: Optional[str] = None) -> str:
+def generate_prompt_from_template(template, youtube_link):
     """
-    Download file from Minio
-    
-    Args:
-        bucket: Minio bucket name
-        object_name: Object name in bucket
-        output_path: Output file path (optional)
-        
-    Returns:
-        Path to downloaded file
-    """
-    if not output_path:
-        output_path = tempfile.mktemp(suffix=os.path.splitext(object_name)[1])
-    
-    try:
-        client = get_minio_client()
-        
-        # Download file
-        client.fget_object(
-            bucket_name=bucket,
-            object_name=object_name,
-            file_path=output_path
-        )
-        
-        logger.info(f"Downloaded from Minio: {bucket}/{object_name}")
-        return output_path
-        
-    except S3Error as e:
-        logger.error(f"Minio S3 Error: {str(e)}")
-        raise Exception(f"Lỗi khi download từ Minio: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error downloading from Minio: {str(e)}")
-        raise Exception(f"Lỗi khi download: {str(e)}")
-
-
-def delete_from_minio(bucket: str, object_name: str) -> bool:
-    """
-    Delete file from Minio
-    
-    Args:
-        bucket: Minio bucket name
-        object_name: Object name in bucket
-        
-    Returns:
-        True if successful
-    """
-    try:
-        client = get_minio_client()
-        
-        client.remove_object(
-            bucket_name=bucket,
-            object_name=object_name
-        )
-        
-        logger.info(f"Deleted from Minio: {bucket}/{object_name}")
-        return True
-        
-    except S3Error as e:
-        logger.error(f"Minio S3 Error: {str(e)}")
-        raise Exception(f"Lỗi khi xóa file từ Minio: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error deleting from Minio: {str(e)}")
-        return False
-
-
-def get_minio_presigned_url(bucket: str, object_name: str, expires: int = 3600) -> str:
-    """
-    Get presigned URL for Minio object
+    Generate prompt từ template và youtube link
     
     Args:
-        bucket: Minio bucket name
-        object_name: Object name in bucket
-        expires: URL expiration time in seconds (default 1 hour)
-        
+        template: PromptTemplate instance hoặc template string
+        youtube_link: Link YouTube
+    
     Returns:
-        Presigned URL
+        str: Generated prompt
     """
-    try:
-        client = get_minio_client()
-        
-        url = client.presigned_get_object(
-            bucket_name=bucket,
-            object_name=object_name,
-            expires=timedelta(seconds=expires)
-        )
-        
-        return url
-        
-    except S3Error as e:
-        logger.error(f"Minio S3 Error: {str(e)}")
-        raise Exception(f"Lỗi khi tạo presigned URL: {str(e)}")
-
-
-# ============================================================
-# VIDEO PROCESSING UTILITIES
-# ============================================================
-
-def cut_video_segment(input_file: str, start_time: float, end_time: float, 
-                     output_path: Optional[str] = None) -> str:
-    """
-    Cut video segment using MoviePy
+    from apps.videos.models import PromptTemplate
     
-    Args:
-        input_file: Path to input video file
-        start_time: Start time in seconds
-        end_time: End time in seconds
-        output_path: Output file path (optional)
-        
-    Returns:
-        Path to output video file
-    """
-    if not output_path:
-        output_path = tempfile.mktemp(suffix='.mp4')
+    if isinstance(template, PromptTemplate):
+        template_content = template.template_content
+    else:
+        template_content = str(template)
     
-    try:
-        logger.info(f"Cutting video from {start_time}s to {end_time}s")
-        
-        # Load video
-        video = VideoFileClip(input_file)
-        
-        # Validate time range
-        if start_time < 0:
-            start_time = 0
-        if end_time > video.duration:
-            end_time = video.duration
-        if start_time >= end_time:
-            raise ValueError("Start time must be less than end time")
-        
-        # Cut segment
-        segment = video.subclip(start_time, end_time)
-        
-        # Write output
-        segment.write_videofile(
-            output_path,
-            codec='libx264',
-            audio_codec='aac',
-            temp_audiofile=tempfile.mktemp(suffix='.m4a'),
-            remove_temp=True,
-            logger=None  # Suppress moviepy logs
-        )
-        
-        # Close clips
-        segment.close()
-        video.close()
-        
-        logger.info(f"Video segment saved to: {output_path}")
-        return output_path
-        
-    except Exception as e:
-        logger.error(f"Error cutting video: {str(e)}")
-        raise Exception(f"Lỗi khi cắt video: {str(e)}")
-
-
-def get_video_info(file_path: str) -> Dict[str, Any]:
-    """
-    Get video information
+    # Replace placeholder
+    prompt = template_content.replace('{youtube_link}', youtube_link or '')
     
-    Args:
-        file_path: Path to video file
-        
-    Returns:
-        Dictionary containing video info
-    """
-    try:
-        video = VideoFileClip(file_path)
-        
-        info = {
-            'duration': video.duration,
-            'fps': video.fps,
-            'size': video.size,  # (width, height)
-            'width': video.w,
-            'height': video.h,
-            'aspect_ratio': video.aspect_ratio,
-        }
-        
-        video.close()
-        
-        return info
-        
-    except Exception as e:
-        logger.error(f"Error getting video info: {str(e)}")
-        raise Exception(f"Lỗi khi lấy thông tin video: {str(e)}")
-
-
-def merge_video_segments(segment_files: list, output_path: Optional[str] = None) -> str:
-    """
-    Merge multiple video segments
+    # Có thể thêm logic xử lý khác ở đây (gọi AI, v.v.)
     
-    Args:
-        segment_files: List of video file paths
-        output_path: Output file path (optional)
-        
-    Returns:
-        Path to merged video file
-    """
-    if not output_path:
-        output_path = tempfile.mktemp(suffix='.mp4')
-    
-    try:
-        from moviepy.editor import concatenate_videoclips
-        
-        logger.info(f"Merging {len(segment_files)} video segments")
-        
-        # Load all clips
-        clips = [VideoFileClip(f) for f in segment_files]
-        
-        # Concatenate
-        final_clip = concatenate_videoclips(clips, method='compose')
-        
-        # Write output
-        final_clip.write_videofile(
-            output_path,
-            codec='libx264',
-            audio_codec='aac',
-            logger=None
-        )
-        
-        # Close clips
-        for clip in clips:
-            clip.close()
-        final_clip.close()
-        
-        logger.info(f"Merged video saved to: {output_path}")
-        return output_path
-        
-    except Exception as e:
-        logger.error(f"Error merging videos: {str(e)}")
-        raise Exception(f"Lỗi khi merge video: {str(e)}")
-
-
-# ============================================================
-# PROMPT GENERATION UTILITIES
-# ============================================================
-
-def generate_prompt_from_template(template, youtube_url: str) -> str:
-    """
-    Generate prompt from template and Youtube URL
-    
-    Args:
-        template: PromptTemplate instance
-        youtube_url: Youtube URL
-        
-    Returns:
-        Generated prompt string
-    """
-    try:
-        # Get Youtube metadata
-        metadata = get_youtube_metadata(youtube_url)
-        
-        # Replace placeholders in template
-        prompt = template.template_content
-        
-        replacements = {
-            '{youtube_title}': metadata.get('title', ''),
-            '{youtube_description}': metadata.get('description', ''),
-            '{youtube_tags}': ', '.join(metadata.get('tags', [])),
-            '{youtube_uploader}': metadata.get('uploader', ''),
-            '{youtube_channel}': metadata.get('channel', ''),
-            '{youtube_duration}': str(metadata.get('duration', 0)),
-            '{youtube_views}': str(metadata.get('view_count', 0)),
-        }
-        
-        for placeholder, value in replacements.items():
-            prompt = prompt.replace(placeholder, value)
-        
-        return prompt
-        
-    except Exception as e:
-        logger.error(f"Error generating prompt: {str(e)}")
-        raise Exception(f"Lỗi khi generate prompt: {str(e)}")
-
-
-# ============================================================
-# FILE CLEANUP UTILITIES
-# ============================================================
-
-def cleanup_temp_files(*file_paths):
-    """
-    Clean up temporary files
-    
-    Args:
-        *file_paths: Variable number of file paths to delete
-    """
-    for file_path in file_paths:
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                logger.info(f"Cleaned up temp file: {file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to cleanup {file_path}: {str(e)}")
+    return prompt

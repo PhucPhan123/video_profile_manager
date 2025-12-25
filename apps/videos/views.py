@@ -1,469 +1,435 @@
-# apps/videos/views.py
+"""
+Views for Video Profile Management System
+"""
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
-from django.views import View
-from django.urls import reverse_lazy
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse, HttpResponseBadRequest
-from django.db.models import Q
-import re
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
 import json
+import logging
 
-from .models import VideoProfile, PromptTemplate, VideoProcessingLog
-from .forms import (
-    VideoProfileForm, PromptTemplateForm, 
-    VideoProcessingForm, PromptGeneratorForm
-)
-from .utils import (
-    extract_youtube_video_id, get_youtube_metadata,
-    cut_video_segment, upload_to_minio, download_from_minio,
-    generate_prompt_from_template
-)
+from .models import VideoProfile, PromptTemplate
+from .utils import MinioClient, VideoProcessor, generate_prompt_from_template
+
+logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# VIDEO PROFILE VIEWS
-# ============================================================
+# ============ VIDEO PROFILE VIEWS ============
 
-class VideoProfileListView(LoginRequiredMixin, ListView):
-    """Màn hình quản lý video - View toàn bộ video"""
-    model = VideoProfile
-    template_name = 'videos/video_list.html'
-    context_object_name = 'videos'
-    paginate_by = 20
+def video_list(request):
+    """Màn hình Quản lý video - Danh sách tất cả video profiles"""
+    videos = VideoProfile.objects.all().select_related('assigned_user', 'prompt_template')
     
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        
-        # Search functionality
-        search = self.request.GET.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) |
-                Q(youtube_url__icontains=search) |
-                Q(notes__icontains=search)
-            )
-        
-        # Filter by status
-        status = self.request.GET.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-        
-        # Filter by assigned user
-        assigned_user = self.request.GET.get('assigned_user')
-        if assigned_user:
-            queryset = queryset.filter(assigned_user_id=assigned_user)
-        
-        return queryset
+    # Filter by status if provided
+    status_filter = request.GET.get('status')
+    if status_filter:
+        videos = videos.filter(status=status_filter)
     
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['status_choices'] = VideoProfile.STATUS_CHOICES
-        context['search_query'] = self.request.GET.get('search', '')
-        context['selected_status'] = self.request.GET.get('status', '')
-        return context
-
-
-class VideoProfileDetailView(LoginRequiredMixin, DetailView):
-    """View chi tiết video profile"""
-    model = VideoProfile
-    template_name = 'videos/video_detail.html'
-    context_object_name = 'video'
+    # Filter by user if provided
+    user_filter = request.GET.get('user')
+    if user_filter:
+        videos = videos.filter(assigned_user_id=user_filter)
     
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['processing_results'] = self.object.processing_results or []
-        context['processing_logs'] = self.object.processing_logs.all()[:50]
-        context['completed_segments'] = self.object.get_completed_segments()
-        return context
+    context = {
+        'videos': videos,
+        'status_choices': VideoProfile.STATUS_CHOICES,
+    }
+    return render(request, 'videos/video_list.html', context)
 
 
-class VideoProfileCreateView(LoginRequiredMixin, CreateView):
-    """Màn hình khởi tạo video profile"""
-    model = VideoProfile
-    form_class = VideoProfileForm
-    template_name = 'videos/video_form.html'
-    success_url = reverse_lazy('videos:video_list')
-    
-    def form_valid(self, form):
-        # Extract Youtube video ID
-        youtube_url = form.cleaned_data.get('youtube_url')
-        if youtube_url:
-            video_id = extract_youtube_video_id(youtube_url)
-            form.instance.youtube_video_id = video_id
-            
-            # Get metadata from Youtube
-            try:
-                metadata = get_youtube_metadata(youtube_url)
-                if metadata:
-                    if not form.instance.title:
-                        form.instance.title = metadata.get('title', '')
-                    form.instance.duration = metadata.get('duration')
-            except Exception as e:
-                messages.warning(self.request, f'Không thể lấy metadata từ Youtube: {str(e)}')
-        
-        messages.success(self.request, 'Video profile đã được tạo thành công!')
-        return super().form_valid(form)
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['title'] = 'Khởi tạo Video Profile'
-        context['submit_text'] = 'Tạo mới'
-        context['templates'] = PromptTemplate.objects.filter(is_active=True)
-        return context
+def video_detail(request, pk):
+    """Xem chi tiết video profile - redirect đến video_edit"""
+    return redirect('video_edit', pk=pk)
 
 
-class VideoProfileUpdateView(LoginRequiredMixin, UpdateView):
-    """Màn hình sửa video profile"""
-    model = VideoProfile
-    form_class = VideoProfileForm
-    template_name = 'videos/video_form.html'
-    
-    def get_success_url(self):
-        return reverse_lazy('videos:video_detail', kwargs={'pk': self.object.pk})
-    
-    def form_valid(self, form):
-        # Update Youtube video ID if URL changed
-        youtube_url = form.cleaned_data.get('youtube_url')
-        if youtube_url:
-            video_id = extract_youtube_video_id(youtube_url)
-            form.instance.youtube_video_id = video_id
-        
-        messages.success(self.request, 'Video profile đã được cập nhật!')
-        return super().form_valid(form)
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['title'] = 'Sửa Video Profile'
-        context['submit_text'] = 'Cập nhật'
-        context['video'] = self.object
-        context['processing_results'] = self.object.processing_results or []
-        context['templates'] = PromptTemplate.objects.filter(is_active=True)
-        return context
-
-
-class VideoProfileDeleteView(LoginRequiredMixin, DeleteView):
-    """Xóa video profile"""
-    model = VideoProfile
-    template_name = 'videos/video_confirm_delete.html'
-    success_url = reverse_lazy('videos:video_list')
-    
-    def delete(self, request, *args, **kwargs):
-        messages.success(request, 'Video profile đã được xóa!')
-        return super().delete(request, *args, **kwargs)
-
-
-# ============================================================
-# VIDEO PROCESSING VIEWS
-# ============================================================
-
-class VideoProcessingView(LoginRequiredMixin, View):
-    """View xử lý cắt video"""
-    
-    def post(self, request, pk):
-        video = get_object_or_404(VideoProfile, pk=pk)
-        form = VideoProcessingForm(request.POST)
-        
-        if not form.is_valid():
-            return JsonResponse({
-                'success': False,
-                'errors': form.errors
-            }, status=400)
-        
-        # Get processing parameters
-        start_time = form.cleaned_data['start_time']
-        end_time = form.cleaned_data['end_time']
-        custom_prompt = form.cleaned_data.get('custom_prompt')
-        prompt_template = form.cleaned_data.get('prompt_template')
-        
-        # Determine prompt to use
-        if custom_prompt:
-            prompt = custom_prompt
-        elif prompt_template:
-            # Generate prompt from template
-            prompt = generate_prompt_from_template(
-                template=prompt_template,
-                youtube_url=video.youtube_url
-            )
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': 'Vui lòng chọn template hoặc nhập prompt.'
-            }, status=400)
-        
+def video_create(request):
+    """Màn hình Khởi tạo video profile"""
+    if request.method == 'POST':
         try:
-            # Update status
-            video.status = 'processing'
-            video.save()
+            # Lấy dữ liệu từ form
+            title = request.POST.get('title')
+            youtube_link = request.POST.get('youtube_link', '').strip()
+            minio_input_link = request.POST.get('minio_input_link', '').strip()
+            assigned_user_id = request.POST.get('assigned_user')
+            prompt_template_id = request.POST.get('prompt_template')
+            notes = request.POST.get('notes', '')
             
-            # Log start
-            VideoProcessingLog.objects.create(
-                video_profile=video,
-                level='info',
-                message='Bắt đầu xử lý cắt video',
-                details={
-                    'start_time': start_time,
-                    'end_time': end_time,
-                    'prompt': prompt
-                }
+            # Validate
+            if not title:
+                messages.error(request, 'Tiêu đề là bắt buộc')
+                return redirect('video_create')
+            
+            # Tạo video profile
+            video = VideoProfile.objects.create(
+                title=title,
+                youtube_link=youtube_link if youtube_link else None,
+                minio_input_link=minio_input_link if minio_input_link else None,
+                assigned_user_id=assigned_user_id if assigned_user_id else None,
+                prompt_template_id=prompt_template_id if prompt_template_id else None,
+                notes=notes,
+                segments=[],
+                status='draft'
             )
             
-            # Download video from Minio
-            input_file = download_from_minio(
-                bucket=video.minio_bucket,
-                object_name=video.minio_input_object_name
-            )
-            
-            # Cut video segment
-            output_file = cut_video_segment(
-                input_file=input_file,
-                start_time=start_time,
-                end_time=end_time
-            )
-            
-            # Upload result to Minio
-            segment_number = len(video.processing_results) + 1
-            output_object_name = f"outputs/{video.id}_segment_{segment_number}.mp4"
-            output_url = upload_to_minio(
-                file_path=output_file,
-                bucket=video.minio_bucket,
-                object_name=output_object_name
-            )
-            
-            # Add processing result
-            result = video.add_processing_result(
-                prompt=prompt,
-                prompt_result='',  # TODO: Integrate with AI for prompt result
-                start_time=start_time,
-                end_time=end_time,
-                output_url=output_url,
-                output_object_name=output_object_name,
-                status='completed'
-            )
-            
-            # Update status
-            video.status = 'completed'
-            video.save()
-            
-            # Log success
-            VideoProcessingLog.objects.create(
-                video_profile=video,
-                level='success',
-                message='Cắt video thành công',
-                details=result
-            )
-            
-            return JsonResponse({
-                'success': True,
-                'result': result,
-                'message': 'Video đã được cắt thành công!'
-            })
+            messages.success(request, f'Đã tạo video profile: {video.title}')
+            return redirect('video_edit', pk=video.id)
             
         except Exception as e:
-            # Update status
+            logger.error(f"Error creating video: {e}")
+            messages.error(request, f'Lỗi khi tạo video: {str(e)}')
+            return redirect('video_create')
+    
+    # GET request
+    from django.contrib.auth.models import User
+    context = {
+        'users': User.objects.all(),
+        'prompt_templates': PromptTemplate.objects.filter(is_active=True),
+    }
+    return render(request, 'videos/video_form.html', context)
+
+
+def video_edit(request, pk):
+    """Màn hình Sửa video profile với preview"""
+    video = get_object_or_404(VideoProfile, pk=pk)
+    minio_client = MinioClient()
+    
+    if request.method == 'POST':
+        try:
+            # Update basic fields
+            video.title = request.POST.get('title', video.title)
+            video.youtube_link = request.POST.get('youtube_link', '').strip() or None
+            video.minio_input_link = request.POST.get('minio_input_link', '').strip() or None
+            video.notes = request.POST.get('notes', '')
+            
+            assigned_user_id = request.POST.get('assigned_user')
+            video.assigned_user_id = assigned_user_id if assigned_user_id else None
+            
+            prompt_template_id = request.POST.get('prompt_template')
+            video.prompt_template_id = prompt_template_id if prompt_template_id else None
+            
+            # Update segments from JSON
+            segments_json = request.POST.get('segments', '[]')
+            try:
+                video.segments = json.loads(segments_json)
+            except json.JSONDecodeError:
+                messages.warning(request, 'Không thể parse segments JSON, giữ nguyên dữ liệu cũ')
+            
+            video.save()
+            messages.success(request, 'Đã cập nhật video profile')
+            return redirect('video_edit', pk=pk)
+            
+        except Exception as e:
+            logger.error(f"Error updating video: {e}")
+            messages.error(request, f'Lỗi khi cập nhật video: {str(e)}')
+    
+    # Generate presigned URLs for preview
+    input_presigned_url = None
+    if video.minio_input_link:
+        input_presigned_url = minio_client.get_presigned_url(video.minio_input_link)
+    
+    # Generate presigned URLs for output segments
+    for segment in video.segments:
+        if segment.get('minio_output_link'):
+            segment['presigned_url'] = minio_client.get_presigned_url(segment['minio_output_link'])
+    
+    from django.contrib.auth.models import User
+    context = {
+        'video': video,
+        'users': User.objects.all(),
+        'prompt_templates': PromptTemplate.objects.filter(is_active=True),
+        'input_presigned_url': input_presigned_url,
+        'segments_json': json.dumps(video.segments),
+    }
+    return render(request, 'videos/video_form.html', context)
+
+
+@require_http_methods(["POST"])
+def video_delete(request, pk):
+    """Xóa video profile"""
+    video = get_object_or_404(VideoProfile, pk=pk)
+    title = video.title
+    
+    try:
+        # Optionally delete files from Minio
+        # minio_client = MinioClient()
+        # if video.minio_input_link:
+        #     minio_client.delete_file(video.minio_input_link)
+        # for segment in video.segments:
+        #     if segment.get('minio_output_link'):
+        #         minio_client.delete_file(segment['minio_output_link'])
+        
+        video.delete()
+        messages.success(request, f'Đã xóa video profile: {title}')
+    except Exception as e:
+        logger.error(f"Error deleting video: {e}")
+        messages.error(request, f'Lỗi khi xóa video: {str(e)}')
+    
+    return redirect('video_list')
+
+
+# ============ PROMPT TEMPLATE VIEWS ============
+
+def prompt_list(request):
+    """Màn hình Quản lý prompt - Danh sách tất cả prompts"""
+    prompts = PromptTemplate.objects.all()
+    
+    # Filter by category if provided
+    category_filter = request.GET.get('category')
+    if category_filter:
+        prompts = prompts.filter(category=category_filter)
+    
+    # Filter by active status
+    is_active = request.GET.get('is_active')
+    if is_active:
+        prompts = prompts.filter(is_active=is_active == 'true')
+    
+    context = {
+        'prompts': prompts,
+        'category_choices': PromptTemplate.CATEGORY_CHOICES,
+    }
+    return render(request, 'videos/prompt_list.html', context)
+
+
+def prompt_detail(request, pk):
+    """Xem chi tiết prompt - redirect đến prompt_edit"""
+    return redirect('prompt_edit', pk=pk)
+
+
+def prompt_create(request):
+    """Màn hình Khởi tạo prompt template"""
+    if request.method == 'POST':
+        try:
+            name = request.POST.get('name')
+            category = request.POST.get('category')
+            template_content = request.POST.get('template_content')
+            description = request.POST.get('description', '')
+            is_active = request.POST.get('is_active') == 'on'
+            
+            # Validate
+            if not name or not category or not template_content:
+                messages.error(request, 'Tên, thể loại và nội dung template là bắt buộc')
+                return redirect('prompt_create')
+            
+            # Create prompt
+            prompt = PromptTemplate.objects.create(
+                name=name,
+                category=category,
+                template_content=template_content,
+                description=description,
+                is_active=is_active
+            )
+            
+            messages.success(request, f'Đã tạo prompt template: {prompt.name}')
+            return redirect('prompt_edit', pk=prompt.id)
+            
+        except Exception as e:
+            logger.error(f"Error creating prompt: {e}")
+            messages.error(request, f'Lỗi khi tạo prompt: {str(e)}')
+            return redirect('prompt_create')
+    
+    # GET request
+    context = {
+        'category_choices': PromptTemplate.CATEGORY_CHOICES,
+    }
+    return render(request, 'videos/prompt_form.html', context)
+
+
+def prompt_edit(request, pk):
+    """Màn hình Sửa prompt template"""
+    prompt = get_object_or_404(PromptTemplate, pk=pk)
+    
+    if request.method == 'POST':
+        try:
+            prompt.name = request.POST.get('name', prompt.name)
+            prompt.category = request.POST.get('category', prompt.category)
+            prompt.template_content = request.POST.get('template_content', prompt.template_content)
+            prompt.description = request.POST.get('description', '')
+            prompt.is_active = request.POST.get('is_active') == 'on'
+            
+            prompt.save()
+            messages.success(request, 'Đã cập nhật prompt template')
+            return redirect('prompt_edit', pk=pk)
+            
+        except Exception as e:
+            logger.error(f"Error updating prompt: {e}")
+            messages.error(request, f'Lỗi khi cập nhật prompt: {str(e)}')
+    
+    context = {
+        'prompt': prompt,
+        'category_choices': PromptTemplate.CATEGORY_CHOICES,
+    }
+    return render(request, 'videos/prompt_form.html', context)
+
+
+@require_http_methods(["POST"])
+def prompt_delete(request, pk):
+    """Xóa prompt template"""
+    prompt = get_object_or_404(PromptTemplate, pk=pk)
+    name = prompt.name
+    
+    try:
+        prompt.delete()
+        messages.success(request, f'Đã xóa prompt template: {name}')
+    except Exception as e:
+        logger.error(f"Error deleting prompt: {e}")
+        messages.error(request, f'Lỗi khi xóa prompt: {str(e)}')
+    
+    return redirect('prompt_list')
+
+
+# ============ AJAX/API VIEWS ============
+
+@require_http_methods(["POST"])
+def generate_prompt(request):
+    """Generate prompt từ template và youtube link (AJAX)"""
+    try:
+        data = json.loads(request.body)
+        template_id = data.get('template_id')
+        youtube_link = data.get('youtube_link', '')
+        
+        if not template_id:
+            return JsonResponse({'error': 'Template ID is required'}, status=400)
+        
+        template = get_object_or_404(PromptTemplate, pk=template_id)
+        generated_prompt = generate_prompt_from_template(template, youtube_link)
+        
+        return JsonResponse({
+            'success': True,
+            'prompt': generated_prompt
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating prompt: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def process_video_segment(request):
+    """Xử lý cắt video segment (AJAX)"""
+    try:
+        data = json.loads(request.body)
+        video_id = data.get('video_id')
+        segment_index = data.get('segment_index')
+        start_time = float(data.get('start_time', 0))
+        end_time = float(data.get('end_time', 0))
+        
+        # Validate
+        if not video_id or segment_index is None:
+            return JsonResponse({'error': 'Video ID and segment index are required'}, status=400)
+        
+        if start_time >= end_time:
+            return JsonResponse({'error': 'Start time must be less than end time'}, status=400)
+        
+        video = get_object_or_404(VideoProfile, pk=video_id)
+        
+        if not video.minio_input_link:
+            return JsonResponse({'error': 'No input video link'}, status=400)
+        
+        # Process segment
+        video.status = 'processing'
+        video.save()
+        
+        processor = VideoProcessor()
+        output_link = processor.process_segment(
+            video.minio_input_link,
+            start_time,
+            end_time,
+            segment_index
+        )
+        
+        if not output_link:
             video.status = 'failed'
             video.save()
-            
-            # Log error
-            VideoProcessingLog.objects.create(
-                video_profile=video,
-                level='error',
-                message=f'Lỗi khi cắt video: {str(e)}',
-                details={'exception': str(e)}
-            )
-            
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-
-
-class PromptGenerateView(LoginRequiredMixin, View):
-    """Generate prompt từ template và Youtube URL"""
-    
-    def post(self, request):
-        form = PromptGeneratorForm(request.POST)
+            return JsonResponse({'error': 'Failed to process video segment'}, status=500)
         
-        if not form.is_valid():
-            return JsonResponse({
-                'success': False,
-                'errors': form.errors
-            }, status=400)
+        # Update segment
+        if segment_index < len(video.segments):
+            video.segments[segment_index]['minio_output_link'] = output_link
+            video.segments[segment_index]['start_time'] = start_time
+            video.segments[segment_index]['end_time'] = end_time
         
-        youtube_url = form.cleaned_data['youtube_url']
-        template = form.cleaned_data['template']
+        # Update status
+        if video.get_processed_segments() == video.get_total_segments():
+            video.status = 'completed'
         
-        try:
-            prompt = generate_prompt_from_template(
-                template=template,
-                youtube_url=youtube_url
-            )
-            
-            return JsonResponse({
-                'success': True,
-                'prompt': prompt
-            })
-            
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-
-
-# ============================================================
-# PROMPT TEMPLATE VIEWS
-# ============================================================
-
-class PromptTemplateListView(LoginRequiredMixin, ListView):
-    """Màn hình quản lý prompt - View toàn bộ prompt"""
-    model = PromptTemplate
-    template_name = 'videos/prompt_list.html'
-    context_object_name = 'prompts'
-    paginate_by = 20
-    
-    def get_queryset(self):
-        queryset = super().get_queryset()
+        video.save()
         
-        # Search functionality
-        search = self.request.GET.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) |
-                Q(template_content__icontains=search) |
-                Q(description__icontains=search)
-            )
+        # Generate presigned URL for preview
+        minio_client = MinioClient()
+        presigned_url = minio_client.get_presigned_url(output_link)
         
-        # Filter by category
-        category = self.request.GET.get('category')
-        if category:
-            queryset = queryset.filter(category=category)
+        return JsonResponse({
+            'success': True,
+            'output_link': output_link,
+            'presigned_url': presigned_url,
+            'progress': video.get_progress_percentage()
+        })
         
-        # Filter by active status
-        is_active = self.request.GET.get('is_active')
-        if is_active == '1':
-            queryset = queryset.filter(is_active=True)
-        elif is_active == '0':
-            queryset = queryset.filter(is_active=False)
+    except Exception as e:
+        logger.error(f"Error processing video segment: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def add_segment(request):
+    """Thêm segment mới vào video (AJAX)"""
+    try:
+        data = json.loads(request.body)
+        video_id = data.get('video_id')
+        prompt = data.get('prompt', '')
+        result = data.get('result', '')
         
-        return queryset
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['category_choices'] = PromptTemplate.CATEGORY_CHOICES
-        context['search_query'] = self.request.GET.get('search', '')
-        context['selected_category'] = self.request.GET.get('category', '')
-        return context
-
-
-class PromptTemplateDetailView(LoginRequiredMixin, DetailView):
-    """View chi tiết prompt template"""
-    model = PromptTemplate
-    template_name = 'videos/prompt_detail.html'
-    context_object_name = 'prompt'
-
-
-class PromptTemplateCreateView(LoginRequiredMixin, CreateView):
-    """Màn hình khởi tạo prompt template"""
-    model = PromptTemplate
-    form_class = PromptTemplateForm
-    template_name = 'videos/prompt_form.html'
-    success_url = reverse_lazy('videos:prompt_list')
-    
-    def form_valid(self, form):
-        messages.success(self.request, 'Prompt template đã được tạo thành công!')
-        return super().form_valid(form)
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['title'] = 'Khởi tạo Prompt Template'
-        context['submit_text'] = 'Tạo mới'
-        return context
-
-
-class PromptTemplateUpdateView(LoginRequiredMixin, UpdateView):
-    """Màn hình sửa prompt template"""
-    model = PromptTemplate
-    form_class = PromptTemplateForm
-    template_name = 'videos/prompt_form.html'
-    
-    def get_success_url(self):
-        return reverse_lazy('videos:prompt_detail', kwargs={'pk': self.object.pk})
-    
-    def form_valid(self, form):
-        messages.success(self.request, 'Prompt template đã được cập nhật!')
-        return super().form_valid(form)
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['title'] = 'Sửa Prompt Template'
-        context['submit_text'] = 'Cập nhật'
-        return context
-
-
-class PromptTemplateDeleteView(LoginRequiredMixin, DeleteView):
-    """Xóa prompt template"""
-    model = PromptTemplate
-    template_name = 'videos/prompt_confirm_delete.html'
-    success_url = reverse_lazy('videos:prompt_list')
-    
-    def delete(self, request, *args, **kwargs):
-        messages.success(request, 'Prompt template đã được xóa!')
-        return super().delete(request, *args, **kwargs)
-
-
-# ============================================================
-# PREVIEW VIEWS
-# ============================================================
-
-class YoutubePreviewView(LoginRequiredMixin, View):
-    """Preview Youtube video"""
-    
-    def get(self, request):
-        youtube_url = request.GET.get('url')
-        if not youtube_url:
-            return JsonResponse({
-                'success': False,
-                'error': 'URL không được cung cấp'
-            }, status=400)
+        video = get_object_or_404(VideoProfile, pk=video_id)
         
-        try:
-            video_id = extract_youtube_video_id(youtube_url)
-            embed_url = f"https://www.youtube.com/embed/{video_id}"
-            
-            # Get metadata
-            metadata = get_youtube_metadata(youtube_url)
-            
-            return JsonResponse({
-                'success': True,
-                'video_id': video_id,
-                'embed_url': embed_url,
-                'metadata': metadata
-            })
-            
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-
-
-# ============================================================
-# DASHBOARD VIEW
-# ============================================================
-
-class DashboardView(LoginRequiredMixin, View):
-    """Dashboard tổng quan"""
-    
-    def get(self, request):
-        context = {
-            'total_videos': VideoProfile.objects.count(),
-            'total_prompts': PromptTemplate.objects.count(),
-            'processing_videos': VideoProfile.objects.filter(status='processing').count(),
-            'completed_videos': VideoProfile.objects.filter(status='completed').count(),
-            'failed_videos': VideoProfile.objects.filter(status='failed').count(),
-            'recent_videos': VideoProfile.objects.all()[:10],
-            'active_prompts': PromptTemplate.objects.filter(is_active=True).count(),
+        new_segment = {
+            'prompt': prompt,
+            'result': result,
+            'minio_output_link': None,
+            'start_time': None,
+            'end_time': None
         }
-        return render(request, 'videos/dashboard.html', context)
+        
+        video.segments.append(new_segment)
+        video.save()
+        
+        return JsonResponse({
+            'success': True,
+            'segment_index': len(video.segments) - 1,
+            'segment': new_segment
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding segment: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["POST"])
+def delete_segment(request):
+    """Xóa segment khỏi video (AJAX)"""
+    try:
+        data = json.loads(request.body)
+        video_id = data.get('video_id')
+        segment_index = data.get('segment_index')
+        
+        video = get_object_or_404(VideoProfile, pk=video_id)
+        
+        if 0 <= segment_index < len(video.segments):
+            deleted_segment = video.segments.pop(segment_index)
+            video.save()
+            
+            return JsonResponse({
+                'success': True,
+                'deleted_segment': deleted_segment
+            })
+        else:
+            return JsonResponse({'error': 'Invalid segment index'}, status=400)
+        
+    except Exception as e:
+        logger.error(f"Error deleting segment: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def home(request):
+    """Home page - redirect to video list"""
+    return redirect('video_list')
